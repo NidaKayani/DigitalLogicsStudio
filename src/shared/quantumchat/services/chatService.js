@@ -24,11 +24,38 @@ export async function fetchFriends() {
   return asUserArray(data?.data);
 }
 
-export async function fetchDiscoverUsers(query = "") {
+export async function fetchDiscoverUsers(
+  query = "",
+  { limit = 200, cursor = null } = {},
+) {
   const { data } = await client.get("/users/discover", {
-    params: query ? { q: query } : undefined,
+    params: {
+      ...(query ? { q: query } : {}),
+      limit,
+      ...(cursor ? { cursor } : {}),
+    },
   });
-  return asUserArray(data?.data);
+  return {
+    users: asUserArray(data?.data),
+    hasMore: Boolean(data?.meta?.hasMore),
+    nextCursor: data?.meta?.nextCursor || null,
+  };
+}
+
+/** Load every discoverable non-friend page (capped for safety). */
+export async function fetchAllDiscoverUsers(query = "", { pageSize = 200, maxPages = 10 } = {}) {
+  const all = [];
+  let cursor = null;
+  for (let page = 0; page < maxPages; page += 1) {
+    const { users, hasMore, nextCursor } = await fetchDiscoverUsers(query, {
+      limit: pageSize,
+      cursor,
+    });
+    all.push(...users);
+    if (!hasMore || !nextCursor) break;
+    cursor = nextCursor;
+  }
+  return all;
 }
 
 export async function fetchUser(userId) {
