@@ -13,6 +13,7 @@ import RouteSeoManager from "../shared/seo/RouteSeoManager";
 import RouteNormalizer from "../shared/seo/RouteNormalizer";
 import AnalyticsTracker from "../shared/seo/AnalyticsTracker";
 import BoolMentorWidget from "../shared/widgets/BoolMentorWidget/BoolMentorWidget";
+import QuantumChatWidget from "../shared/widgets/QuantumChatWidget/QuantumChatWidget";
 
 // UTILS / OTHER TOOLS:
 import ScrollToTop from "../shared/utils/ScrollToTop";
@@ -540,6 +541,7 @@ function App() {
       >
         <AppContent />
         <BoolMentorWidget />
+        <QuantumChatWidget />
       </BrowserRouter>
       <Analytics />
     </div>
