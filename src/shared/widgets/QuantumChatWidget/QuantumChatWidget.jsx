@@ -433,6 +433,9 @@ function ChatReadyPanel({
 
     const absorbRows = async (rows, { countUnread }) => {
       const missing = new Set();
+      const openThreadMessages = [];
+      const openId = peerIdRef.current;
+
       for (const raw of rows) {
         if (raw.group) continue;
         const fromSelf = String(raw.from) === String(user.id);
@@ -454,14 +457,35 @@ function ChatReadyPanel({
           });
         }
 
-        const openId = peerIdRef.current;
-        if (!fromSelf && countUnread && String(openId) !== otherId) {
+        // Live-append into the currently open conversation.
+        if (openId && String(otherId) === String(openId)) {
+          openThreadMessages.push(decryptMessage(raw, user.id));
+        } else if (!fromSelf && countUnread) {
           incrementUnreadCount(user.id, key);
         }
 
         if (!knownIdsRef.current.has(otherId)) {
           missing.add(otherId);
         }
+      }
+
+      if (openThreadMessages.length && openId && peerIdRef.current === openId) {
+        setMessages((prev) => {
+          const seen = new Set(
+            prev.map((m) => String(m.id || m._id || "")).filter(Boolean),
+          );
+          const next = [...prev];
+          for (const msg of openThreadMessages) {
+            const id = String(msg.id || msg._id || "");
+            if (!id || seen.has(id)) continue;
+            seen.add(id);
+            next.push(msg);
+          }
+          return next.length === prev.length ? prev : next;
+        });
+        const key = conversationKeyForUser(openId);
+        markConversationRead(user.id, key);
+        markPeerConversationRead(openId).catch(() => {});
       }
 
       if (missing.size) {
@@ -518,7 +542,9 @@ function ChatReadyPanel({
     };
 
     runSync();
-    const timer = window.setInterval(runSync, 10000);
+    // Poll faster while a chat is open so new messages appear without leaving the thread.
+    const pollMs = peerIdRef.current ? 2500 : 10000;
+    const timer = window.setInterval(runSync, pollMs);
     const onVisible = () => {
       if (document.visibilityState === "visible") runSync();
     };
@@ -528,7 +554,7 @@ function ChatReadyPanel({
       window.clearInterval(timer);
       document.removeEventListener("visibilitychange", onVisible);
     };
-  }, [user?.id, bumpInbox]);
+  }, [user?.id, bumpInbox, peer?.id]);
 
   useEffect(() => {
     if (composeRequest > 0) {
