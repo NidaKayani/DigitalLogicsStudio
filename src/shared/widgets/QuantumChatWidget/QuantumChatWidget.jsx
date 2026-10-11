@@ -134,7 +134,7 @@ function QuantumChatWidgetInner() {
   return (
     <section
       className={`quantum-chat-dock${isOpen ? " quantum-chat-dock--open" : ""}`}
-      aria-label="Messaging"
+      aria-label="QuantumChat"
     >
       <header
         ref={headerRef}
@@ -156,7 +156,7 @@ function QuantumChatWidgetInner() {
             <span className="quantum-chat-dock__avatar-text">{initials}</span>
             <span className="quantum-chat-dock__status" title="Online" />
           </span>
-          <span className="quantum-chat-dock__title">Messaging</span>
+          <span className="quantum-chat-dock__title">QuantumChat</span>
         </div>
 
         <div className="quantum-chat-dock__actions">
@@ -164,7 +164,7 @@ function QuantumChatWidgetInner() {
             <button
               type="button"
               className="quantum-chat-dock__icon-btn"
-              aria-label="More messaging options"
+              aria-label="More QuantumChat options"
               title="More"
               aria-expanded={menuOpen}
               onClick={(event) => {
@@ -204,7 +204,7 @@ function QuantumChatWidgetInner() {
           <button
             type="button"
             className="quantum-chat-dock__icon-btn"
-            aria-label={isOpen ? "Collapse messaging" : "Expand messaging"}
+            aria-label={isOpen ? "Collapse QuantumChat" : "Expand QuantumChat"}
             title={isOpen ? "Collapse" : "Expand"}
             onClick={(event) => {
               event.stopPropagation();
@@ -231,7 +231,7 @@ function QuantumChatWidgetInner() {
               <p className="quantum-chat-fallback__title">QuantumChat</p>
               <p className="quantum-chat-fallback__text">
                 {embedEnabled
-                  ? "Messaging could not be loaded inside this panel. Open QuantumChat in a window instead."
+                  ? "QuantumChat could not be loaded inside this panel. Open it in a window instead."
                   : "Open QuantumChat for your secured conversations. Sign in there to message your team."}
               </p>
               <div className="quantum-chat-fallback__actions">
