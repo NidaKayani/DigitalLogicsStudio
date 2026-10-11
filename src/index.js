@@ -6,6 +6,7 @@ import "./shared/styles/light-theme-overrides.css";
 import App from "./app/App";
 import { ThemeProvider } from "./shared/context/ThemeContext";
 import { AuthProvider } from "./auth/context/AuthContext";
+import { QuantumChatAuthProvider } from "./shared/quantumchat/context/QuantumChatAuthContext";
 import { ToastProvider } from "./shared/context/ToastContext";
 import reportWebVitals from "./app/reportWebVitals";
 
@@ -16,9 +17,11 @@ const app = (
     <HelmetProvider>
       <ThemeProvider>
         <AuthProvider>
-          <ToastProvider position="top-right" autoDismiss={5000}>
-            <App />
-          </ToastProvider>
+          <QuantumChatAuthProvider>
+            <ToastProvider position="top-right" autoDismiss={5000}>
+              <App />
+            </ToastProvider>
+          </QuantumChatAuthProvider>
         </AuthProvider>
       </ThemeProvider>
     </HelmetProvider>
