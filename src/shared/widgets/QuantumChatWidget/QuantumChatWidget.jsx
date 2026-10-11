@@ -99,7 +99,13 @@ function AuthPanel({ mode, onSwitchMode }) {
         setTotpCode("");
       }
     } catch (err) {
-      setError(err.response?.data?.error || err.message || "Request failed.");
+      const isNetwork =
+        err.code === "ERR_NETWORK" || err.message === "Network Error";
+      setError(
+        isNetwork
+          ? "Cannot reach QuantumChat (network/CORS). Restart the DLS dev server, or push the QuantumChat-Backend CORS change."
+          : err.response?.data?.error || err.message || "Request failed.",
+      );
     } finally {
       setLoading(false);
     }

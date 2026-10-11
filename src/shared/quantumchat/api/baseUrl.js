@@ -1,5 +1,7 @@
 const LEGACY_PROD_BACKEND = "https://quantum-chat-backend.vercel.app";
 const PROD_BACKEND = "https://quantum-chat-backend-six.vercel.app";
+/** CRA setupProxy.js mounts the QuantumChat API under this path (dev only). */
+const DEV_PROXY_BASE = "/qc-api";
 
 function normalizeApiBaseUrl(url) {
   const trimmed = String(url || "")
@@ -21,12 +23,19 @@ export function getApiBaseUrl() {
     if (process.env.NODE_ENV === "production" && isLocalhostUrl(configured)) {
       return PROD_BACKEND;
     }
+    // Absolute remote URLs from localhost are blocked by CORS until the
+    // QuantumChat-Backend allowlist is deployed — use the CRA proxy instead.
+    if (
+      process.env.NODE_ENV !== "production" &&
+      !isLocalhostUrl(configured) &&
+      !configured.startsWith("/")
+    ) {
+      return DEV_PROXY_BASE;
+    }
     return configured;
   }
   if (process.env.NODE_ENV !== "production") {
-    // Prefer production API in CRA unless explicitly overridden — local QC
-    // backend often shares port 5000 with the DLS backend.
-    return PROD_BACKEND;
+    return DEV_PROXY_BASE;
   }
   return PROD_BACKEND;
 }
