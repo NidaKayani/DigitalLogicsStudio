@@ -71,3 +71,16 @@ export function resolveCircuitMindBaseUrl() {
   const configured = process.env.REACT_APP_CIRCUITMIND_API_URL?.trim();
   return normalizeUrl(configured || DEFAULT_CIRCUITMIND_API_URL);
 }
+
+const DEFAULT_QUANTUMCHAT_URL = "https://chat.quantumlogicslimited.com/chat";
+
+export function resolveQuantumChatUrl() {
+  const configured = process.env.REACT_APP_QUANTUMCHAT_URL?.trim();
+  return normalizeUrl(configured || DEFAULT_QUANTUMCHAT_URL);
+}
+
+// QuantumChat currently ships X-Frame-Options: DENY, so iframe embed is opt-in
+// after their CSP allows DLS origins (frame-ancestors).
+export function isQuantumChatEmbedEnabled() {
+  return process.env.REACT_APP_QUANTUMCHAT_EMBED === "true";
+}
