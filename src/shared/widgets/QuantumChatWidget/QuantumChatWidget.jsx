@@ -25,7 +25,7 @@ import { KEY_SET_SIZE } from "../../quantumchat/crypto/keys";
 import {
   decryptMessage,
   fetchConversation,
-  fetchDiscoverUsers,
+  fetchAllDiscoverUsers,
   fetchFriends,
   fetchUser,
   markPeerConversationRead,
@@ -394,8 +394,8 @@ function ChatReadyPanel({
     setListError("");
     try {
       const [friendRows, discoverRows] = await Promise.all([
-        fetchFriends().catch(() => []),
-        fetchDiscoverUsers().catch(() => []),
+        fetchFriends(),
+        fetchAllDiscoverUsers(),
       ]);
       setFriends(Array.isArray(friendRows) ? friendRows : []);
       setDiscover(Array.isArray(discoverRows) ? discoverRows : []);
@@ -409,6 +409,33 @@ function ChatReadyPanel({
   useEffect(() => {
     loadLists();
   }, [loadLists]);
+
+  // Server-side discover search so people outside the first local page are findable.
+  useEffect(() => {
+    const q = query.trim();
+    if (!q) return undefined;
+    let cancelled = false;
+    const timer = window.setTimeout(async () => {
+      try {
+        const rows = await fetchAllDiscoverUsers(q);
+        if (cancelled) return;
+        setDiscover((prev) => {
+          const map = new Map(prev.map((p) => [String(p.id || p._id), p]));
+          rows.forEach((p) => {
+            const id = String(p.id || p._id);
+            if (id) map.set(id, { ...p, id });
+          });
+          return [...map.values()];
+        });
+      } catch {
+        // Keep existing list; local filter still applies.
+      }
+    }, 300);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [query]);
 
   useEffect(() => {
     peerIdRef.current = peer ? String(peer.id || peer._id) : null;
