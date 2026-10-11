@@ -27,8 +27,20 @@ import {
   fetchConversation,
   fetchDiscoverUsers,
   fetchFriends,
+  fetchUser,
+  markPeerConversationRead,
   sendDirectMessage,
+  syncInbox,
 } from "../../quantumchat/services/chatService";
+import {
+  conversationKeyForUser,
+  getConversationActivity,
+  getTotalUnread,
+  getUnreadCount,
+  incrementUnreadCount,
+  markConversationRead,
+  setConversationActivity,
+} from "../../quantumchat/utils/readState";
 import { resolveQuantumChatUrl } from "../../config/apiConfig";
 import "./QuantumChatWidget.css";
 
@@ -38,6 +50,31 @@ function getInitials(name) {
   const parts = trimmed.split(/\s+/).filter(Boolean);
   if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
   return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
+}
+
+function formatMessageTime(iso) {
+  if (!iso) return "";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "";
+  const now = new Date();
+  const sameDay =
+    date.getFullYear() === now.getFullYear() &&
+    date.getMonth() === now.getMonth() &&
+    date.getDate() === now.getDate();
+  if (sameDay) {
+    return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  }
+  return date.toLocaleDateString([], { month: "short", day: "numeric" });
+}
+
+function previewFromMessage(raw, myUserId) {
+  const decrypted = decryptMessage(raw, myUserId);
+  if (decrypted.text) {
+    const text = String(decrypted.text).replace(/\s+/g, " ").trim();
+    return text.length > 64 ? `${text.slice(0, 64)}…` : text;
+  }
+  if (raw.attachment) return "Attachment";
+  return "New message";
 }
 
 function AuthPanel({ mode, onSwitchMode }) {
@@ -325,10 +362,15 @@ function KeyGatePanel() {
   );
 }
 
-function ChatReadyPanel({ composeRequest, onComposeHandled }) {
+function ChatReadyPanel({
+  composeRequest,
+  onComposeHandled,
+  onUnreadChange,
+}) {
   const { user } = useQuantumChatAuth();
   const [friends, setFriends] = useState([]);
   const [discover, setDiscover] = useState([]);
+  const [inboxPeers, setInboxPeers] = useState([]);
   const [loadingList, setLoadingList] = useState(true);
   const [listError, setListError] = useState("");
   const [peer, setPeer] = useState(null);
@@ -337,7 +379,15 @@ function ChatReadyPanel({ composeRequest, onComposeHandled }) {
   const [sending, setSending] = useState(false);
   const [picking, setPicking] = useState(false);
   const [query, setQuery] = useState("");
+  const [inboxTick, setInboxTick] = useState(0);
   const bottomRef = useRef(null);
+  const peerIdRef = useRef(null);
+  const syncCursorRef = useRef(null);
+  const knownIdsRef = useRef(new Set());
+
+  const bumpInbox = useCallback(() => {
+    setInboxTick((n) => n + 1);
+  }, []);
 
   const loadLists = useCallback(async () => {
     setLoadingList(true);
@@ -361,6 +411,126 @@ function ChatReadyPanel({ composeRequest, onComposeHandled }) {
   }, [loadLists]);
 
   useEffect(() => {
+    peerIdRef.current = peer ? String(peer.id || peer._id) : null;
+  }, [peer]);
+
+  useEffect(() => {
+    const ids = new Set();
+    [...friends, ...discover, ...inboxPeers].forEach((person) => {
+      const id = String(person.id || person._id || "");
+      if (id) ids.add(id);
+    });
+    knownIdsRef.current = ids;
+  }, [friends, discover, inboxPeers]);
+
+  // Poll inbox so new DMs show a preview + unread badge without opening each chat.
+  useEffect(() => {
+    if (!user?.id) return undefined;
+
+    let cancelled = false;
+    let inFlight = false;
+    let seeded = Boolean(syncCursorRef.current);
+
+    const absorbRows = async (rows, { countUnread }) => {
+      const missing = new Set();
+      for (const raw of rows) {
+        if (raw.group) continue;
+        const fromSelf = String(raw.from) === String(user.id);
+        const otherId = String(fromSelf ? raw.to : raw.from || "");
+        if (!otherId) continue;
+
+        const key = conversationKeyForUser(otherId);
+        const at = raw.createdAt || new Date().toISOString();
+        const prev = getConversationActivity(user.id, key);
+        const prevMs = prev?.at ? new Date(prev.at).getTime() : 0;
+        const nextMs = new Date(at).getTime();
+        if (!prev || nextMs >= prevMs) {
+          const preview = previewFromMessage(raw, user.id);
+          const minePrefix = fromSelf ? "You: " : "";
+          setConversationActivity(user.id, key, {
+            at,
+            from: raw.from,
+            preview: `${minePrefix}${preview}`,
+          });
+        }
+
+        const openId = peerIdRef.current;
+        if (!fromSelf && countUnread && String(openId) !== otherId) {
+          incrementUnreadCount(user.id, key);
+        }
+
+        if (!knownIdsRef.current.has(otherId)) {
+          missing.add(otherId);
+        }
+      }
+
+      if (missing.size) {
+        const fetched = await Promise.all(
+          [...missing].map((id) => fetchUser(id).catch(() => null)),
+        );
+        const people = fetched.filter(Boolean).map((p) => ({
+          ...p,
+          id: String(p.id || p._id),
+        }));
+        if (people.length) {
+          setInboxPeers((prev) => {
+            const map = new Map(prev.map((p) => [String(p.id), p]));
+            people.forEach((p) => map.set(String(p.id), p));
+            return [...map.values()];
+          });
+        }
+      }
+
+      bumpInbox();
+    };
+
+    const runSync = async () => {
+      if (cancelled || inFlight) return;
+      if (typeof document !== "undefined" && document.visibilityState === "hidden") {
+        return;
+      }
+      inFlight = true;
+      try {
+        if (!seeded) {
+          // Load recent conversation previews once (no unread spam for old history).
+          const dayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+          const seed = await syncInbox(dayAgo);
+          if (cancelled) return;
+          if (seed.messages?.length) {
+            await absorbRows(seed.messages, { countUnread: false });
+          }
+          syncCursorRef.current = seed.cursor || new Date().toISOString();
+          seeded = true;
+          return;
+        }
+
+        const { messages: rows, cursor } = await syncInbox(syncCursorRef.current);
+        if (cancelled) return;
+        if (cursor) syncCursorRef.current = cursor;
+        if (rows?.length) {
+          await absorbRows(rows, { countUnread: true });
+        }
+      } catch {
+        // Keep polling; transient network blips are fine.
+      } finally {
+        inFlight = false;
+      }
+    };
+
+    runSync();
+    const timer = window.setInterval(runSync, 10000);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") runSync();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [user?.id, bumpInbox]);
+
+  useEffect(() => {
     if (composeRequest > 0) {
       setPicking(true);
       setPeer(null);
@@ -370,18 +540,38 @@ function ChatReadyPanel({ composeRequest, onComposeHandled }) {
 
   const openPeer = useCallback(
     async (nextPeer) => {
-      setPeer(nextPeer);
+      const peerId = String(nextPeer.id || nextPeer._id);
+      setPeer({ ...nextPeer, id: peerId });
       setPicking(false);
       setMessages([]);
+      const key = conversationKeyForUser(peerId);
+      markConversationRead(user.id, key);
+      bumpInbox();
+      markPeerConversationRead(peerId).catch(() => {});
       try {
-        const rows = await fetchConversation(nextPeer.id || nextPeer._id);
+        const rows = await fetchConversation(peerId);
         const decrypted = (rows || []).map((row) => decryptMessage(row, user.id));
         setMessages(decrypted);
+        if (decrypted.length) {
+          const last = rows[rows.length - 1];
+          const lastDec = decrypted[decrypted.length - 1];
+          const fromSelf = String(last.from) === String(user.id);
+          setConversationActivity(user.id, key, {
+            at: last.createdAt || new Date().toISOString(),
+            from: last.from,
+            preview: `${fromSelf ? "You: " : ""}${
+              lastDec.text
+                ? String(lastDec.text).replace(/\s+/g, " ").trim().slice(0, 64)
+                : "Message"
+            }`,
+          });
+          bumpInbox();
+        }
       } catch (err) {
         setListError(err.response?.data?.error || err.message || "Could not load chat.");
       }
     },
-    [user.id],
+    [user.id, bumpInbox],
   );
 
   useEffect(() => {
@@ -390,34 +580,75 @@ function ChatReadyPanel({ composeRequest, onComposeHandled }) {
 
   const contacts = useMemo(() => {
     const map = new Map();
-    [...friends, ...discover].forEach((person) => {
+    [...friends, ...discover, ...inboxPeers].forEach((person) => {
       const id = String(person.id || person._id);
       if (!id || id === String(user.id)) return;
       if (!map.has(id)) map.set(id, { ...person, id });
     });
-    const list = [...map.values()];
+
+    let list = [...map.values()].map((person) => {
+      const key = conversationKeyForUser(person.id);
+      const activity = getConversationActivity(user.id, key);
+      const unreadCount = getUnreadCount(user.id, key);
+      return {
+        ...person,
+        lastMessageAt: activity?.at || null,
+        preview: activity?.preview || null,
+        unreadCount,
+        unread: unreadCount > 0,
+      };
+    });
+
     const q = query.trim().toLowerCase();
-    if (!q) return list;
-    return list.filter((p) =>
-      `${p.username || ""} ${p.displayName || ""} ${p.email || ""}`
-        .toLowerCase()
-        .includes(q),
+    if (q) {
+      list = list.filter((p) =>
+        `${p.username || ""} ${p.displayName || ""} ${p.email || ""} ${p.preview || ""}`
+          .toLowerCase()
+          .includes(q),
+      );
+    }
+
+    list.sort((a, b) => {
+      if (a.unread !== b.unread) return a.unread ? -1 : 1;
+      const aAt = a.lastMessageAt ? new Date(a.lastMessageAt).getTime() : 0;
+      const bAt = b.lastMessageAt ? new Date(b.lastMessageAt).getTime() : 0;
+      return bAt - aAt;
+    });
+
+    return list;
+    // inboxTick forces re-read of localStorage activity/unread
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [friends, discover, inboxPeers, query, user.id, inboxTick]);
+
+  useEffect(() => {
+    const total = getTotalUnread(
+      user.id,
+      contacts.map((c) => c.id),
     );
-  }, [friends, discover, query, user.id]);
+    onUnreadChange?.(total);
+  }, [contacts, user.id, onUnreadChange, inboxTick]);
 
   const handleSend = async (event) => {
     event.preventDefault();
-    if (!peer || !draft.trim() || sending) return;
+    const text = draft.trim();
+    if (!peer || !text || sending) return;
     setSending(true);
     try {
       const raw = await sendDirectMessage({
         myUserId: user.id,
         peer,
-        text: draft,
+        text,
       });
       setDraft("");
       if (raw) {
         setMessages((prev) => [...prev, decryptMessage(raw, user.id)]);
+        const key = conversationKeyForUser(peer.id);
+        setConversationActivity(user.id, key, {
+          at: raw.createdAt || new Date().toISOString(),
+          from: user.id,
+          preview: `You: ${text.slice(0, 64)}`,
+        });
+        bumpInbox();
       }
     } catch (err) {
       setListError(err.response?.data?.error || err.message || "Send failed.");
@@ -503,15 +734,33 @@ function ChatReadyPanel({ composeRequest, onComposeHandled }) {
             <li key={person.id}>
               <button
                 type="button"
-                className="qc-chat-list__item"
+                className={`qc-chat-list__item${
+                  person.unread ? " qc-chat-list__item--unread" : ""
+                }`}
                 onClick={() => openPeer(person)}
               >
                 <span className="qc-chat-list__avatar" aria-hidden="true">
                   {getInitials(person.displayName || person.username)}
                 </span>
                 <span className="qc-chat-list__meta">
-                  <strong>{person.displayName || person.username}</strong>
-                  <small>@{person.username}</small>
+                  <span className="qc-chat-list__row">
+                    <strong>{person.displayName || person.username}</strong>
+                    {person.lastMessageAt && (
+                      <time className="qc-chat-list__time">
+                        {formatMessageTime(person.lastMessageAt)}
+                      </time>
+                    )}
+                  </span>
+                  <span className="qc-chat-list__row">
+                    <small className="qc-chat-list__preview">
+                      {person.preview || `@${person.username}`}
+                    </small>
+                    {person.unreadCount > 0 && (
+                      <span className="qc-chat-list__badge" aria-label={`${person.unreadCount} unread`}>
+                        {person.unreadCount > 99 ? "99+" : person.unreadCount}
+                      </span>
+                    )}
+                  </span>
                 </span>
               </button>
             </li>
@@ -529,12 +778,17 @@ function QuantumChatWidgetInner() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [authMode, setAuthMode] = useState("signin");
   const [composeTick, setComposeTick] = useState(0);
+  const [unreadTotal, setUnreadTotal] = useState(0);
 
   const chatUrl = resolveQuantumChatUrl();
   const initials = useMemo(
     () => getInitials(user?.displayName || user?.username || user?.email),
     [user],
   );
+
+  const handleUnreadChange = useCallback((total) => {
+    setUnreadTotal(Number(total) || 0);
+  }, []);
 
   useEffect(() => {
     if (!isOpen) return undefined;
@@ -567,18 +821,13 @@ function QuantumChatWidgetInner() {
     window.open(chatUrl, "quantumchat", "noopener,noreferrer");
   }, [chatUrl]);
 
-  let body;
+  const chatReady = Boolean(user && hasLocalKeyring);
+
+  let gateBody = null;
   if (!user) {
-    body = <AuthPanel mode={authMode} onSwitchMode={setAuthMode} />;
+    gateBody = <AuthPanel mode={authMode} onSwitchMode={setAuthMode} />;
   } else if (!hasLocalKeyring) {
-    body = <KeyGatePanel />;
-  } else {
-    body = (
-      <ChatReadyPanel
-        composeRequest={composeTick}
-        onComposeHandled={() => {}}
-      />
-    );
+    gateBody = <KeyGatePanel />;
   }
 
   return (
@@ -605,8 +854,18 @@ function QuantumChatWidgetInner() {
           <span className="quantum-chat-dock__avatar" aria-hidden="true">
             <span className="quantum-chat-dock__avatar-text">{initials}</span>
             <span className="quantum-chat-dock__status" title="Online" />
+            {unreadTotal > 0 && (
+              <span className="quantum-chat-dock__unread" aria-hidden="true">
+                {unreadTotal > 99 ? "99+" : unreadTotal}
+              </span>
+            )}
           </span>
           <span className="quantum-chat-dock__title">QuantumChat</span>
+          {unreadTotal > 0 && (
+            <span className="quantum-chat-dock__title-badge" aria-label={`${unreadTotal} unread messages`}>
+              {unreadTotal > 99 ? "99+" : unreadTotal}
+            </span>
+          )}
         </div>
 
         <div className="quantum-chat-dock__actions">
@@ -689,9 +948,24 @@ function QuantumChatWidgetInner() {
         </div>
       </header>
 
-      {isOpen && (
+      {/* Keep inbox panel mounted while signed in so unread sync runs even when collapsed. */}
+      {chatReady && (
+        <div
+          id="quantum-chat-dock-body"
+          className="quantum-chat-dock__body"
+          hidden={!isOpen}
+          style={isOpen ? undefined : { display: "none" }}
+        >
+          <ChatReadyPanel
+            composeRequest={composeTick}
+            onComposeHandled={() => {}}
+            onUnreadChange={handleUnreadChange}
+          />
+        </div>
+      )}
+      {!chatReady && isOpen && (
         <div id="quantum-chat-dock-body" className="quantum-chat-dock__body">
-          {body}
+          {gateBody}
         </div>
       )}
     </section>

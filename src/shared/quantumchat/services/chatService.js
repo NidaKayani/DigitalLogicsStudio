@@ -36,11 +36,26 @@ export async function fetchUser(userId) {
   return data?.data || null;
 }
 
-export async function fetchConversation(peerId, { limit = 80 } = {}) {
+export async function fetchConversation(peerId, { limit = 80, markRead = true } = {}) {
   const { data } = await client.get(`/messages/${peerId}`, {
-    params: { limit, markRead: "1" },
+    params: { limit, markRead: markRead ? "1" : "0" },
   });
   return asMessageArray(data?.data);
+}
+
+/** Recent DMs/groups since `since` ISO cursor — used for dock inbox badges. */
+export async function syncInbox(sinceIso) {
+  const { data } = await client.get("/messages/sync", {
+    params: sinceIso ? { since: sinceIso } : undefined,
+  });
+  return {
+    messages: asMessageArray(data?.data),
+    cursor: data?.meta?.cursor || null,
+  };
+}
+
+export async function markPeerConversationRead(peerId) {
+  await client.post(`/messages/${peerId}/read`);
 }
 
 export function decryptMessage(raw, myUserId) {
