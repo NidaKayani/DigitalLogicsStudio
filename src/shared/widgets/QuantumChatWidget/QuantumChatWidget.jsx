@@ -1,6 +1,7 @@
 import React, {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -627,8 +628,16 @@ function ChatReadyPanel({
     [user.id, bumpInbox],
   );
 
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  useLayoutEffect(() => {
+    // Jump to latest message before paint so opening a chat does not animate from the top.
+    const node = bottomRef.current;
+    if (!node) return;
+    const scroller = node.closest(".qc-thread__messages");
+    if (scroller) {
+      scroller.scrollTop = scroller.scrollHeight;
+      return;
+    }
+    node.scrollIntoView({ behavior: "auto", block: "end" });
   }, [messages, peer]);
 
   const contacts = useMemo(() => {
