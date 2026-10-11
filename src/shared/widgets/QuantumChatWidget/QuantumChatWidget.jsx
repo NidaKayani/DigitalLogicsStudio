@@ -679,14 +679,22 @@ function ChatReadyPanel({
           )}
           {messages.map((msg) => {
             const mine = String(msg.from) === String(user.id);
+            const timeLabel = formatMessageTime(msg.createdAt || msg.at);
             return (
               <div
                 key={msg.id}
                 className={`qc-bubble ${mine ? "qc-bubble--mine" : "qc-bubble--theirs"}`}
               >
-                {msg.text ?? (
-                  <em className="qc-bubble__locked">Unable to decrypt</em>
-                )}
+                <div className="qc-bubble__body">
+                  {msg.text ?? (
+                    <em className="qc-bubble__locked">Unable to decrypt</em>
+                  )}
+                </div>
+                {timeLabel ? (
+                  <time className="qc-bubble__time" dateTime={msg.createdAt || msg.at}>
+                    {timeLabel}
+                  </time>
+                ) : null}
               </div>
             );
           })}
