@@ -21,6 +21,7 @@ import CombinationalLayout from "../../CombinationalLayout";
 import Section   from "../shared/components/Section.jsx";
 import Quiz      from "../shared/components/Quiz.jsx";
 import TipsPanel from "../shared/components/TipsPanel.jsx";
+import Tex       from "../../../../../shared/components/Tex";
 
 // ── Encoder-specific components ────────────────────────────────────────────────
 import EncoderTypeSelector  from "./components/EncoderTypeSelector.jsx";
@@ -153,17 +154,21 @@ const EncoderPage = () => {
               🎯 The Binary-Index Trick — Write Any Encoder Equation in 30 Seconds
             </h4>
             <ol style={{ color: COLORS.textSecondary, paddingLeft: "18px", margin: 0, lineHeight: "1.8", fontSize: "0.88rem" }}>
-              <li>List all input indices from 0 to 2ⁿ−1</li>
-              <li>For output bit Aₖ, find every index where <strong style={{ color: COLORS.warn }}>bit k = 1</strong> in binary</li>
+              <li>List all input indices from <Tex>{"0"}</Tex> to <Tex>{"2^{n} - 1"}</Tex></li>
+              <li>For output bit <Tex>{"A_{k}"}</Tex>, find every index where <strong style={{ color: COLORS.warn }}>bit <Tex>{"k = 1"}</Tex></strong> in binary</li>
               <li>OR those input lines together — that's your equation!</li>
             </ol>
-            <div style={{ marginTop: "14px", padding: "12px", background: COLORS.darkBg, borderRadius: "8px", fontFamily: "monospace", fontSize: "0.87rem" }}>
-              <span style={{ color: COLORS.warn }}>Example — A0 in 8-to-3 encoder:</span><br />
-              <span style={{ color: COLORS.textSecondary }}>Indices 0–7 in binary: </span>
-              <span style={{ color: COLORS.textDim }}>000 001 010 011 100 101 110 111</span><br />
-              <span style={{ color: COLORS.textSecondary }}>Bit-0 = 1 for: </span>
-              <span style={{ color: COLORS.purple }}>1, 3, 5, 7 (odd indices)</span><br />
-              <span style={{ color: COLORS.high, fontWeight: "700" }}>∴ A0 = I1 + I3 + I5 + I7 ✅</span>
+            <div style={{ marginTop: "14px", padding: "12px", background: COLORS.darkBg, borderRadius: "8px", fontSize: "0.87rem", lineHeight: "1.9" }}>
+              <span style={{ color: COLORS.warn }}>Example — <Tex>{"A_{0}"}</Tex> in 8-to-3 encoder:</span><br />
+              <span style={{ color: COLORS.textSecondary }}>Indices <Tex>{"0 \\text{–} 7"}</Tex> in binary: </span>
+              <span style={{ color: COLORS.textDim }}>
+                <Tex>{"\\mathtt{000}\\;\\, \\mathtt{001}\\;\\, \\mathtt{010}\\;\\, \\mathtt{011}\\;\\, \\mathtt{100}\\;\\, \\mathtt{101}\\;\\, \\mathtt{110}\\;\\, \\mathtt{111}"}</Tex>
+              </span><br />
+              <span style={{ color: COLORS.textSecondary }}>Bit <Tex>{"0 = 1"}</Tex> for: </span>
+              <span style={{ color: COLORS.purple }}><Tex>{"1,\\ 3,\\ 5,\\ 7"}</Tex> (odd indices)</span><br />
+              <span style={{ color: COLORS.high }}>
+                <Tex>{"\\therefore\\; A_{0} = I_{1} + I_{3} + I_{5} + I_{7}"}</Tex> ✅
+              </span>
             </div>
           </div>
 
@@ -173,8 +178,8 @@ const EncoderPage = () => {
               🔄 Encoder vs Decoder — Two Sides of the Same Coin
             </h4>
             <p style={{ color: COLORS.textSecondary, margin: 0, fontSize: "0.87rem", lineHeight: "1.6" }}>
-              <strong style={{ color: COLORS.blue }}>Decoder:</strong> n-bit code → one of 2ⁿ output lines HIGH (expand — like a tree branching out)<br />
-              <strong style={{ color: COLORS.warn }}>Encoder:</strong> one of 2ⁿ inputs HIGH → n-bit code (compress — like a funnel)<br />
+              <strong style={{ color: COLORS.blue }}>Decoder:</strong> <Tex>{"n"}</Tex>-bit code <Tex>{"\\rightarrow"}</Tex> one of <Tex>{"2^{n}"}</Tex> output lines HIGH (expand — like a tree branching out)<br />
+              <strong style={{ color: COLORS.warn }}>Encoder:</strong> one of <Tex>{"2^{n}"}</Tex> inputs HIGH <Tex>{"\\rightarrow"}</Tex> <Tex>{"n"}</Tex>-bit code (compress — like a funnel)<br />
               They are <strong style={{ color: COLORS.high }}>mathematical inverses</strong>. Decoder followed by Encoder = original code back.
             </p>
           </div>
